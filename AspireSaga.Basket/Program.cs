@@ -1,6 +1,5 @@
 using AspireSaga.Basket;
 using AspireSaga.Messages;
-using AspireSaga.Messages.RabbitMQ;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -8,12 +7,9 @@ builder.Services.AddSingleton<BasketService>();
 
 builder.Services
     .AddAspireSagaMessaging()
-    .AddAllEvents()
-    .Configure<RabbitMqOptions>(opt =>
-    {
-        var connectionString = builder.Configuration.GetConnectionString("messaging-rabbit-mq")!;
-        opt.Uri = new Uri(connectionString);
-    });
+    .AddAllEvents();
+
+builder.AddRabbitMQClient("messaging-rabbit-mq");
 
 builder.AddServiceDefaults();
 
@@ -27,17 +23,11 @@ app.MapGet("/baskets", static (BasketService service) => service.GetItems());
 
 app.MapGet("/checkouts", static (BasketService service) => service.GetCheckouts());
 
-app.MapPost("/checkouts", static async (IServiceBus bus, BasketService service) =>
+app.MapPost("/checkouts", static async (IServiceBus bus, BasketService svc, CancellationToken token) =>
 {
-    try
-    {
-        await service.Checkout();
-        return Results.NoContent();
-    }
-    catch (Exception ex)
-    {
-        return Results.BadRequest(ex.Message);
-    }
+    var correlationId = Guid.NewGuid();
+    await svc.CheckoutAsync(correlationId, token);
+    return Results.Accepted();
 });
 
 app.MapPost("/baskets", static (UpdateBasketItemRequest[] body, BasketService service) =>

@@ -10,6 +10,12 @@ builder.Services.AddSingleton<Func<TransactionBuilder>>((IServiceProvider sp) =>
 });
 builder.Services.AddSingleton<InventoryService>();
 
+builder.Services
+    .AddAspireSagaMessaging()
+    .AddAllEvents();
+
+builder.AddRabbitMQClient("messaging-rabbit-mq");
+
 builder.AddServiceDefaults();
 
 var app = builder.Build();

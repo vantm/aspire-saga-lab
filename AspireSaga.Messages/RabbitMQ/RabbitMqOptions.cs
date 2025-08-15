@@ -2,6 +2,6 @@ namespace AspireSaga.Messages.RabbitMQ;
 
 public class RabbitMqOptions
 {
-    public Uri Uri { get; set; } = new("amqp://guest:guest@localhost:5672");
+    public string ServiceName { get; set; } = string.Empty;
     public HashSet<Type> EventTypes { get; } = [];
 }

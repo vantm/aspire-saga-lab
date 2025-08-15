@@ -1,18 +1,13 @@
 using AspireSaga.Messages;
-using AspireSaga.Messages.RabbitMQ;
 using AspireSaga.SalesOrder;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services
     .AddAspireSagaMessaging()
-    .AddAllEvents()
-    .AddConsumer<CheckoutConsumer, CheckoutStarted>()
-    .Configure<RabbitMqOptions>(opt =>
-    {
-        var connectionString = builder.Configuration.GetConnectionString("messaging-rabbit-mq")!;
-        opt.Uri = new Uri(connectionString);
-    });
+    .AddAllEvents();
+
+builder.AddRabbitMQClient("messaging-rabbit-mq");
 
 builder.AddServiceDefaults();
 
@@ -25,5 +20,15 @@ app.MapDefaultEndpoints();
 app.MapGet("/", static () => "Sales Order Service is running");
 
 app.MapGet("/orders", static (OrderService service) => service.GetOrders());
+
+app.MapEvent<PlaceOrderRequest>(static (evt, sp, token) =>
+{
+    var svc = sp.GetRequiredService<OrderService>();
+    var time = sp.GetRequiredService<TimeProvider>();
+    var lines = evt.Products
+        .Select(p => new OrderLine(p.ProductId, p.Quantity))
+        .ToArray();
+    return svc.PlaceOrderAsync(time.GetLocalNow(), 100, lines, evt.CorrelationId);
+});
 
 app.Run();

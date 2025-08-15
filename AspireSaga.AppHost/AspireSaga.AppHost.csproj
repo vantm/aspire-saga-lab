@@ -22,8 +22,10 @@
   <ItemGroup>
     <ProjectReference Include="..\AspireSaga.Basket\AspireSaga.Basket.csproj" />
     <ProjectReference Include="..\AspireSaga.Catalog\AspireSaga.Catalog.csproj" />
+    <ProjectReference Include="..\AspireSaga.Delivery\AspireSaga.Delivery.csproj" />
     <ProjectReference Include="..\AspireSaga.Inventory\AspireSaga.Inventory.csproj" />
     <ProjectReference Include="..\AspireSaga.Payment\AspireSaga.Payment.csproj" />
+    <ProjectReference Include="..\AspireSaga.Runner\AspireSaga.Runner.csproj" />
     <ProjectReference Include="..\AspireSaga.SalesOrder\AspireSaga.SalesOrder.csproj" />
     <ProjectReference Include="..\AspireSaga.Wallet\AspireSaga.Wallet.csproj" />
   </ItemGroup>

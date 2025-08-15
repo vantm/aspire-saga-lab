@@ -2,6 +2,12 @@ using AspireSaga.Catalog;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services
+    .AddAspireSagaMessaging()
+    .AddAllEvents();
+
+builder.AddRabbitMQClient("messaging-rabbit-mq");
+
 builder.AddServiceDefaults();
 
 builder.Services.AddSingleton<ProductService>();
@@ -10,7 +16,7 @@ var app = builder.Build();
 
 app.MapDefaultEndpoints();
 
-app.MapGet("/", () => "Product Service is running");
+app.MapGet("/", () => "Catalog Service is running");
 
 app.MapGet("/products", static (ProductService service) => service.GetProducts());
 

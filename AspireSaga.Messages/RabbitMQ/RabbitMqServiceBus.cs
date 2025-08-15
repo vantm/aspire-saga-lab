@@ -1,16 +1,46 @@
 using MessagePack;
+using Microsoft.Extensions.Logging;
+using OpenTelemetry;
+using OpenTelemetry.Context.Propagation;
 using RabbitMQ.Client;
 using System.Diagnostics;
+using System.Text.Json;
 
 namespace AspireSaga.Messages.RabbitMQ;
 
-class RabbitMqServiceBus(RabbitMqInstances instances) : IServiceBus
+class RabbitMqServiceBus(RabbitMqInstances instances, ILogger<RabbitMqServiceBus> logger, ActivitySource source) : IServiceBus
 {
+    public record Subscription(Guid Id, Func<IServiceProvider, object> Factory);
+
+    private readonly Dictionary<Type, List<Subscription>> _registry = [];
+
+    public IEnumerable<Subscription> GetSubscriptions(Type eventType)
+    {
+        if (_registry.TryGetValue(eventType, out var subscriptions))
+        {
+            return subscriptions.AsReadOnly();
+        }
+        return [];
+    }
+
     public async Task PublishAsync(object message, CancellationToken cancellationToken = default)
     {
+        var activity = source.StartActivity("RabbitMqServiceBus.PublishAsync", ActivityKind.Producer);
+
         Debug.Assert(message is not null, "The message cannot be null.");
 
         var eventType = message.GetType();
+
+        activity?.SetTag("event.type", eventType.AssemblyQualifiedName);
+
+        if (logger.IsEnabled(LogLevel.Debug))
+        {
+            var json = JsonSerializer.Serialize(message);
+
+            logger.LogDebug("Publishing message of type {EventType} with content: {Message}", eventType.Name, json);
+
+            activity?.SetTag("event.message", json);
+        }
 
         var basicProperties = new BasicProperties()
         {
@@ -24,7 +54,17 @@ class RabbitMqServiceBus(RabbitMqInstances instances) : IServiceBus
 
         var body = MessagePackSerializer.Serialize(message, cancellationToken: cancellationToken);
 
-        var exchangeName = instances.GetQueueOrExchangeName(eventType);
+        var exchangeName = instances.GetExchangeName(eventType);
+
+        activity?.SetTag("exchange-name", exchangeName);
+
+        var propagator = Propagators.DefaultTextMapPropagator;
+        var propagationContext = new PropagationContext(activity?.Context ?? default, Baggage.Current);
+
+        propagator.Inject(propagationContext, basicProperties.Headers, (carrier, key, value) =>
+        {
+            carrier[key] = value;
+        });
 
         await instances.ServiceBusChannel.BasicPublishAsync(
             exchange: exchangeName,
@@ -33,5 +73,34 @@ class RabbitMqServiceBus(RabbitMqInstances instances) : IServiceBus
             basicProperties: basicProperties,
             body: body,
             cancellationToken: cancellationToken);
+
+        activity?.Stop();
+    }
+
+    public Guid Subscribe<TEvent>(Func<IServiceProvider, IConsumer<TEvent>> factory)
+    {
+        var eventType = typeof(TEvent);
+        var subscriptionId = Guid.NewGuid();
+        if (!_registry.TryGetValue(eventType, out var subscriptions))
+        {
+            _registry[eventType] = [new(subscriptionId, factory)];
+        }
+        else
+        {
+            _registry[eventType].Add(new(subscriptionId, factory));
+        }
+        return subscriptionId;
+    }
+
+    public void Unsubscribe(Guid subscriptionId)
+    {
+        foreach (var (eventType, subscriptions) in _registry)
+        {
+            subscriptions.RemoveAll(s => s.Id == subscriptionId);
+            if (subscriptions.Count == 0)
+            {
+                _registry.Remove(eventType);
+            }
+        }
     }
 }

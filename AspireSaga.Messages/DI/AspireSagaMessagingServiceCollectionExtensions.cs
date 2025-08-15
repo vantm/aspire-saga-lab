@@ -1,5 +1,9 @@
 using AspireSaga.Messages;
 using AspireSaga.Messages.RabbitMQ;
+using Humanizer;
+using Microsoft.Extensions.Hosting;
+using System.Diagnostics;
+using System.Reflection;
 
 #pragma warning disable IDE0130 // Namespace does not match folder structure
 namespace Microsoft.Extensions.DependencyInjection;
@@ -14,16 +18,20 @@ public static class AspireSagaMessagingServiceCollectionExtensions
         services.AddSingleton<IServiceBus, RabbitMqServiceBus>();
         services.AddSingleton<RabbitMqInstances>();
 
-        services.AddOptions<RabbitMqOptions>();
+        services.AddOptions<RabbitMqOptions>()
+            .Configure<IHostEnvironment>((opts, env) =>
+            {
+                var applicationName = Environment.GetEnvironmentVariable("OTEL_SERVICE_NAME")
+                                      ?? env.ApplicationName
+                                      ?? throw new InvalidOperationException("Application name is not set.");
 
-        return services;
-    }
+                Console.WriteLine("Application: {0}", applicationName);
 
-    public static IServiceCollection AddConsumer<T, E>(this IServiceCollection services)
-        where T : class, IConsumer<E>
-    {
-        services.AddTransient<IConsumer<E>, T>();
-        services.AddHostedService<RabbitMqWorker<T, E>>();
+                applicationName = applicationName.Humanize().Underscore();
+
+                opts.ServiceName = applicationName;
+            });
+
         return services;
     }
 
@@ -34,15 +42,23 @@ public static class AspireSagaMessagingServiceCollectionExtensions
             options.EventTypes.Add(typeof(T));
         });
 
+        services.AddHostedService<RabbitMqWorker<T>>();
+
         return services;
     }
 
     public static IServiceCollection AddAllEvents(this IServiceCollection services)
     {
-        return services.AddEvent<CheckoutStarted>()
-                       .AddEvent<PlaceOrderRequest>()
-                       .AddEvent<OrderPlaced>()
-                       .AddEvent<PurchaseRequest>()
-                       .AddEvent<PurchaseCompleted>();
+        var addEventMethod = typeof(AspireSagaMessagingServiceCollectionExtensions)
+            .GetMethod(nameof(AddEvent), BindingFlags.Static | BindingFlags.Public)!;
+
+        Debug.Assert(addEventMethod != null, "AddEvent method should not be null.");
+
+        typeof(CheckoutStarted).Assembly.GetTypes()
+            .Where(t => t.IsClass && !t.IsAbstract && t.GetInterfaces().Contains(typeof(IMessage)))
+            .ToList()
+            .ForEach(type => addEventMethod.MakeGenericMethod(type).Invoke(null, [services]));
+
+        return services;
     }
 }

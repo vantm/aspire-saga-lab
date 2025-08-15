@@ -1,13 +1,20 @@
+using AspireSaga.Messages;
 using System.Diagnostics;
 
 namespace AspireSaga.Payment;
 
-public class PaymentService
+public class PaymentService(IServiceBus sb, ActivitySource source)
 {
     private readonly List<Payment> _payments = [];
     private readonly List<Refunding> _refundings = [];
 
-    public void Pay(decimal value, Guid correlationId)
+    public Payment? Get(Guid correlationId)
+    {
+        Debug.Assert(correlationId != Guid.Empty, "The correlation ID must not be empty.");
+        return _payments.Find(x => x.CorrelationId == correlationId);
+    }
+
+    public Task PayAsync(decimal value, Guid correlationId)
     {
         Debug.Assert(value > 0, "The payment value must be greater than zero.");
 
@@ -16,11 +23,11 @@ public class PaymentService
             throw new Exception("The payment has been completed.");
         }
 
-        var payment = new Payment(Guid.NewGuid(), value, correlationId, TimeProvider.System.GetTimestamp());
+        var payment = new Payment(Guid.NewGuid(), value, PaymentStatus.Pending, correlationId, TimeProvider.System.GetTimestamp(), null);
 
         _payments.Add(payment);
 
-        //sb.Publish(new Events.PurchaseCompleted(correlationId));
+        return sb.PublishAsync(new PurchaseCreated(correlationId));
     }
 
     public void Refund(decimal value, Guid correlationId)
@@ -33,6 +40,40 @@ public class PaymentService
         var refund = new Refunding(Guid.NewGuid(), value, correlationId, TimeProvider.System.GetTimestamp());
 
         _refundings.Add(refund);
+    }
+
+    public async Task Complete(Guid correlationId)
+    {
+        var activity = source.StartActivity("PaymentService.Complete", ActivityKind.Internal, correlationId.ToString());
+
+        Debug.Assert(correlationId != Guid.Empty, "The correlation ID must be provided.");
+
+        var payment = Get(correlationId);
+
+        if (payment is null)
+        {
+            throw new Exception("The payment doesn't exist.");
+        }
+
+        Debug.Assert(payment.Status == PaymentStatus.Pending, "The payment must be in pending status to complete it.");
+
+        _payments.Remove(payment);
+
+        var completedAt = TimeProvider.System.GetLocalNow();
+
+        activity?.SetTag("completed-at", completedAt.ToString("o"));
+
+        _payments.Add(payment with
+        {
+            Status = PaymentStatus.Paid,
+            CompletedAt = completedAt
+        });
+
+        await sb.PublishAsync(new PaymentCompleted(correlationId, completedAt));
+
+        activity?.SetStatus(ActivityStatusCode.Ok);
+
+        activity?.Stop();
     }
 
     private bool IsPaid(Guid correlationId)

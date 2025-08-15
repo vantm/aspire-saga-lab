@@ -46,15 +46,23 @@ public class BasketService(IServiceBus bus)
         return _checkouts.AsReadOnly();
     }
 
-    public async Task Checkout()
+    public async Task CheckoutAsync(Guid correlationId, CancellationToken cancellationToken)
     {
+        if (correlationId == Guid.Empty)
+        {
+            throw new ArgumentException("CorrelationId cannot be empty.", nameof(correlationId));
+        }
+        if (_checkouts.Exists(x => x.CorrelationId == correlationId))
+        {
+            throw new InvalidOperationException($"Checkout with CorrelationId {correlationId} already exists.");
+        }
         if (_baskets.Count == 0)
         {
             throw new Exception("Basket is empty.");
         }
 
         var items = _baskets.Values.ToArray();
-        var checkout = new Checkout(Guid.NewGuid(), items, CheckoutStatus.Pending, Guid.NewGuid(), TimeProvider.System.GetTimestamp());
+        var checkout = new Checkout(Guid.NewGuid(), items, CheckoutStatus.Pending, correlationId, TimeProvider.System.GetTimestamp());
 
         _checkouts.Add(checkout);
 
@@ -64,6 +72,6 @@ public class BasketService(IServiceBus bus)
         var products = items.Select(x => new PlacedProduct(x.ProductId, x.Quantity)).ToArray();
         var @event = new CheckoutStarted(checkout.CorrelationId, products);
 
-        await bus.PublishAsync(@event);
+        await bus.PublishAsync(@event, cancellationToken);
     }
 }

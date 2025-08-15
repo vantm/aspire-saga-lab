@@ -4,6 +4,12 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddSingleton<WalletService>();
 
+builder.Services
+    .AddAspireSagaMessaging()
+    .AddAllEvents();
+
+builder.AddRabbitMQClient("messaging-rabbit-mq");
+
 builder.AddServiceDefaults();
 
 var app = builder.Build();

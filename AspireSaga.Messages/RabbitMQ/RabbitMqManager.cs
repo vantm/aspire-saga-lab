@@ -5,48 +5,59 @@ using RabbitMQ.Client;
 
 namespace AspireSaga.Messages.RabbitMQ;
 
-class RabbitMqManager(IOptions<RabbitMqOptions> options, RabbitMqInstances instances) : IHostedService
+class RabbitMqManager(IOptions<RabbitMqOptions> options, RabbitMqInstances instances, IConnection connection) : IHostedService
 {
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        var connectionFactory = new ConnectionFactory
-        {
-            Uri = options.Value.Uri,
-        };
+        instances.ServiceBusChannel = await connection.CreateChannelAsync();
+        instances.MessageConsumerChannel = await connection.CreateChannelAsync();
 
-        instances.Connection = await connectionFactory.CreateConnectionAsync();
-        instances.ServiceBusChannel = await instances.Connection.CreateChannelAsync();
-        instances.MessageConsumerChannel = await instances.Connection.CreateChannelAsync();
+        using var channel = await connection.CreateChannelAsync();
 
         foreach (var eventType in options.Value.EventTypes)
         {
-            await RegisterEvent(eventType, instances.ServiceBusChannel);
+            await RegisterEvent(eventType, channel);
         }
     }
 
     public async Task RegisterEvent(Type eventType, IChannel channel)
     {
-        var name = eventType.FullName!.Underscore();
-        var deadLetterName = $"{name}.dead_letters";
+        await ExchangeDeclare();
+        await QueueDeclare();
 
-        await channel.ExchangeDeclareAsync(name, type: "fanout", durable: true, autoDelete: false);
-        await channel.QueueDeclareAsync(name, durable: true, exclusive: false, autoDelete: true, arguments: new Dictionary<string, object?>
+        async Task ExchangeDeclare()
         {
-            { "x-dead-letter-exchange", deadLetterName  },
-            { "x-message-ttl", 86400000  }
-        });
-        await channel.QueueBindAsync(name, name, routingKey: string.Empty);
+            var name = instances.GetExchangeName(eventType);
+            var deadLetterName = instances.GetDeadLetterExchangeName(eventType);
 
-        await channel.ExchangeDeclareAsync(deadLetterName, type: "fanout", durable: true, autoDelete: false);
-        await channel.QueueDeclareAsync(deadLetterName, durable: true, exclusive: false, autoDelete: true);
-        await channel.QueueBindAsync(deadLetterName, deadLetterName, routingKey: string.Empty);
+            await channel.ExchangeDeclareAsync(name, type: "fanout", durable: true, autoDelete: false);
+            await channel.ExchangeDeclareAsync(deadLetterName, type: "fanout", durable: true, autoDelete: false);
+        }
+
+        async Task QueueDeclare()
+        {
+            var exchangeName = instances.GetExchangeName(eventType);
+            var queueName = instances.GetQueueName(eventType);
+
+            var deadLetterExchangeName = instances.GetDeadLetterExchangeName(eventType);
+            var deadLetterQueueName = instances.GetDeadLetterQueueName(eventType);
+
+            await channel.QueueDeclareAsync(queueName, durable: true, exclusive: true, autoDelete: true, arguments: new Dictionary<string, object?>
+            {
+                { "x-dead-letter-exchange", deadLetterQueueName  },
+                { "x-message-ttl", 86400000  }
+            });
+            await channel.QueueDeclareAsync(deadLetterQueueName, durable: true, exclusive: true, autoDelete: true);
+
+            await channel.QueueBindAsync(queueName, exchangeName, routingKey: string.Empty);
+            await channel.QueueBindAsync(deadLetterQueueName, deadLetterExchangeName, routingKey: string.Empty);
+
+        }
     }
-
 
     public Task StopAsync(CancellationToken cancellationToken)
     {
         return Task.WhenAll(
-            instances.Connection.DisposeAsync().AsTask(),
             instances.ServiceBusChannel.DisposeAsync().AsTask(),
             instances.MessageConsumerChannel.DisposeAsync().AsTask());
     }
