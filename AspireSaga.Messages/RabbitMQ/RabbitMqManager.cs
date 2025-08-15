@@ -42,16 +42,15 @@ class RabbitMqManager(IOptions<RabbitMqOptions> options, RabbitMqInstances insta
             var deadLetterExchangeName = instances.GetDeadLetterExchangeName(eventType);
             var deadLetterQueueName = instances.GetDeadLetterQueueName(eventType);
 
-            await channel.QueueDeclareAsync(queueName, durable: true, exclusive: true, autoDelete: true, arguments: new Dictionary<string, object?>
+            await channel.QueueDeclareAsync(queueName, durable: true, exclusive: false, autoDelete: false, arguments: new Dictionary<string, object?>
             {
                 { "x-dead-letter-exchange", deadLetterQueueName  },
                 { "x-message-ttl", 86400000  }
             });
-            await channel.QueueDeclareAsync(deadLetterQueueName, durable: true, exclusive: true, autoDelete: true);
+            await channel.QueueDeclareAsync(deadLetterQueueName, durable: true, exclusive: false, autoDelete: false);
 
             await channel.QueueBindAsync(queueName, exchangeName, routingKey: string.Empty);
             await channel.QueueBindAsync(deadLetterQueueName, deadLetterExchangeName, routingKey: string.Empty);
-
         }
     }
 

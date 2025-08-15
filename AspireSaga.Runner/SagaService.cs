@@ -1,33 +1,20 @@
 namespace AspireSaga.Runner;
 
-public class SagaService
+public class SagaStateMachineService
 {
-    private readonly Dictionary<Guid, (string, ISagaInstance)> _sagas = [];
+    private readonly Dictionary<Guid, ISagaStateMachine> _stateMachines = [];
 
-    public void Save(string state, ISagaInstance saga)
+    public void Save(ISagaStateMachine stateMachine)
     {
-        if (!_sagas.TryAdd(saga.CorrelationId, (state, saga)))
+        var correlationId = stateMachine.CorrelationId;
+        if (!_stateMachines.TryAdd(correlationId, stateMachine))
         {
-            _sagas[saga.CorrelationId] = (state, saga);
+            _stateMachines[correlationId] = stateMachine;
         }
     }
 
-    public (string, ISagaInstance)? Get(Guid correlationId)
+    public IEnumerable<ISagaStateMachine> All()
     {
-        if (_sagas.TryGetValue(correlationId, out var saga))
-        {
-            return saga;
-        }
-        return null;
-    }
-
-    public IEnumerable<Guid> GetCorrelationIds()
-    {
-        return [.. _sagas.Keys];
-    }
-
-    public IEnumerable<ISagaInstance> GetSagas()
-    {
-        return [.. _sagas.Values.Select(x => x.Item2)];
+        return [.. _stateMachines.Values];
     }
 }

@@ -4,7 +4,7 @@ using System.Diagnostics;
 
 namespace AspireSaga.Runner;
 
-public abstract class SagaStateMachine<TSagaInstance, TState, TTrigger>
+public abstract class SagaStateMachine<TSagaInstance, TState, TTrigger> : ISagaStateMachine
     where TSagaInstance : ISagaInstance
 {
     protected StateMachine<TState, TTrigger> _stateMachine;
@@ -13,7 +13,7 @@ public abstract class SagaStateMachine<TSagaInstance, TState, TTrigger>
     protected SagaStateMachine()
     {
         _saga = GetInitialSagaState()!;
-        _stateMachine = new StateMachine<TState, TTrigger>(LoadState, SaveState);
+        _stateMachine = new StateMachine<TState, TTrigger>(GetInitialStateValue()!);
         DefineStateMachine(_stateMachine);
     }
 
@@ -22,12 +22,13 @@ public abstract class SagaStateMachine<TSagaInstance, TState, TTrigger>
     protected abstract void DefineStateMachine(StateMachine<TState, TTrigger> stateMachine);
     protected abstract TSagaInstance GetInitialSagaState();
     protected abstract TState GetInitialStateValue();
-    protected abstract SagaService GetSagaService();
     protected abstract IServiceBus GetServiceBus();
 
     protected ActivitySource? ActivitySource { get; private set; }
 
     private readonly List<Guid> subscription = [];
+
+    public Guid CorrelationId => _saga.CorrelationId;
 
     protected void When<TEvt>(TTrigger trigger, Action<InvalidOperationException>? onFailed = null)
     {
@@ -69,7 +70,7 @@ public abstract class SagaStateMachine<TSagaInstance, TState, TTrigger>
     {
     }
 
-    public async Task ActivateAsync()
+    public async Task StartAsync()
     {
         var activity = ActivitySource?.StartActivity("SagaStateMachine.ActivateAsync", ActivityKind.Consumer);
 
@@ -106,48 +107,6 @@ public abstract class SagaStateMachine<TSagaInstance, TState, TTrigger>
         }
 
         return Task.CompletedTask;
-    }
-
-    protected virtual TState LoadState()
-    {
-        var data = GetSagaService().Get(_saga.CorrelationId);
-        if (data is null)
-        {
-            return GetInitialStateValue();
-        }
-
-        var (stateString, instance) = data.Value;
-        if (instance is TSagaInstance sagaInstance)
-        {
-            _saga = sagaInstance;
-        }
-
-        var loadedState = (TState)Enum.Parse(typeof(TState), stateString);
-        return loadedState;
-    }
-
-    protected virtual void SaveState(TState state)
-    {
-        var activity = ActivitySource?.StartActivity("SagaStateMachine.SaveState", ActivityKind.Consumer);
-
-        try
-        {
-            activity?.SetTag("saga.state", state);
-
-            GetSagaService().Save(state!.ToString()!, _saga);
-
-            activity?.SetStatus(ActivityStatusCode.Ok);
-        }
-        catch (Exception ex)
-        {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-            throw;
-        }
-        finally
-        {
-            activity?.Stop();
-            activity?.Dispose();
-        }
     }
 
     public abstract bool IsFinished();

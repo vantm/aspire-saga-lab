@@ -3,7 +3,7 @@ using System.Diagnostics;
 
 namespace AspireSaga.Runner;
 
-public class SagaRunner(SagaService sagas, IServiceBus sb, ILoggerFactory loggerFactory, ILogger<SagaRunner> logger) : BackgroundService
+public class SagaRunner(SagaStateMachineService sagas, ILogger<SagaRunner> logger) : BackgroundService
 {
     private readonly Dictionary<Guid, Task> _runningSagas = [];
 
@@ -11,58 +11,58 @@ public class SagaRunner(SagaService sagas, IServiceBus sb, ILoggerFactory logger
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            foreach (var correlationId in sagas.GetCorrelationIds())
+            var newSagas = sagas.All()
+                .Where(x => !x.IsFinished())
+                .Where(x => !_runningSagas.ContainsKey(x.CorrelationId));
+
+            foreach (var saga in newSagas)
             {
-                if (_runningSagas.ContainsKey(correlationId))
-                {
-                    continue;
-                }
-
-                var task = Task.Run(async () =>
-                {
-                    var activity = Activity.Current?.Source.StartActivity("StartSaga");
-
-                    logger.LogInformation("Executing the saga {CorrelationId}...", correlationId);
-
-                    try
-                    {
-                        var saga = new CheckoutSaga(correlationId, sagas, sb, loggerFactory.CreateLogger<CheckoutSaga>());
-
-                        activity?.SetTag("saga.correlationId", correlationId);
-
-                        await saga.ActivateAsync();
-
-                        while (!saga.IsFinished())
-                        {
-                            await Task.Delay(500, stoppingToken);
-                        }
-
-                        await saga.StopAsync();
-
-                        activity?.SetStatus(ActivityStatusCode.Ok);
-                    }
-                    catch (Exception ex)
-                    {
-                        logger.LogError(ex, "Saga {CorrelationId} failed", correlationId);
-
-                        activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-
-                        _runningSagas.Remove(correlationId); // remove to retry
-                    }
-                    finally
-                    {
-                        activity?.Stop();
-                    }
-                }, stoppingToken);
-
-                _runningSagas.Add(correlationId, task);
+                _runningSagas.Add(saga.CorrelationId, StartSagaAsync(saga, stoppingToken));
             }
 
-            await Task.Delay(1000, stoppingToken); // Polling interval
+            await Task.Delay(1000, stoppingToken);
         }
 
         await Task.WhenAll(_runningSagas.Values);
 
         _runningSagas.Clear();
+    }
+
+    private async Task StartSagaAsync(ISagaStateMachine saga, CancellationToken cancellationToken)
+    {
+        var correlationId = saga.CorrelationId;
+        var activity = Activity.Current?.Source.StartActivity("StartSaga");
+
+        activity?.SetTag("saga.correlationId", correlationId);
+        activity?.SetTag("saga.type", saga.GetType().FullName);
+
+        logger.LogInformation("Executing the saga {CorrelationId}...", correlationId);
+
+        try
+        {
+
+            await saga.StartAsync();
+
+            while (!saga.IsFinished())
+            {
+                await Task.Delay(1000, cancellationToken);
+            }
+
+            await saga.StopAsync();
+
+            activity?.SetStatus(ActivityStatusCode.Ok);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Saga {CorrelationId} failed", correlationId);
+
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+
+            _runningSagas.Remove(correlationId); // remove to retry
+        }
+        finally
+        {
+            activity?.Stop();
+        }
     }
 }

@@ -3,7 +3,9 @@ using Microsoft.Extensions.Logging;
 using OpenTelemetry;
 using OpenTelemetry.Context.Propagation;
 using RabbitMQ.Client;
+using RabbitMQ.Client.Events;
 using System.Diagnostics;
+using System.Runtime.Versioning;
 using System.Text.Json;
 
 namespace AspireSaga.Messages.RabbitMQ;
@@ -31,7 +33,7 @@ class RabbitMqServiceBus(RabbitMqInstances instances, ILogger<RabbitMqServiceBus
 
         var eventType = message.GetType();
 
-        activity?.SetTag("event.type", eventType.AssemblyQualifiedName);
+        activity?.SetTag("event-type", eventType.AssemblyQualifiedName);
 
         if (logger.IsEnabled(LogLevel.Debug))
         {
@@ -39,7 +41,7 @@ class RabbitMqServiceBus(RabbitMqInstances instances, ILogger<RabbitMqServiceBus
 
             logger.LogDebug("Publishing message of type {EventType} with content: {Message}", eventType.Name, json);
 
-            activity?.SetTag("event.message", json);
+            activity?.SetTag("message", json);
         }
 
         var basicProperties = new BasicProperties()
@@ -75,6 +77,68 @@ class RabbitMqServiceBus(RabbitMqInstances instances, ILogger<RabbitMqServiceBus
             cancellationToken: cancellationToken);
 
         activity?.Stop();
+    }
+
+    public async Task<TReply> GetReplyAsync<TReply>(object message, CancellationToken cancellationToken = default)
+        where TReply : IReply
+    {
+        var activity = source.StartActivity("RabbitMqServiceBus.GetReplyAsync", ActivityKind.Producer);
+
+        Debug.Assert(message is not null, "The message cannot be null.");
+
+        var eventType = message.GetType();
+
+        activity?.SetTag("event-type", eventType.AssemblyQualifiedName);
+
+        if (logger.IsEnabled(LogLevel.Debug))
+        {
+            var json = JsonSerializer.Serialize(message);
+            activity?.SetTag("message", json);
+        }
+
+        var basicProperties = new BasicProperties()
+        {
+            Persistent = true,
+            DeliveryMode = DeliveryModes.Persistent,
+            Headers = new Dictionary<string, object?>
+            {
+                { "MessageType", eventType.AssemblyQualifiedName },
+                { "ReplyType", typeof(TReply).AssemblyQualifiedName },
+            },
+        };
+
+        var body = MessagePackSerializer.Serialize(message, cancellationToken: cancellationToken);
+
+        var exchangeName = instances.GetExchangeName(eventType);
+
+        activity?.SetTag("exchange-name", exchangeName);
+
+        var propagator = Propagators.DefaultTextMapPropagator;
+        var propagationContext = new PropagationContext(activity?.Context ?? default, Baggage.Current);
+
+        propagator.Inject(propagationContext, basicProperties.Headers, (carrier, key, value) =>
+        {
+            carrier[key] = value;
+        });
+
+        await instances.ServiceBusChannel.BasicPublishAsync(
+            exchange: exchangeName,
+            routingKey: string.Empty,
+            mandatory: false,
+            basicProperties: basicProperties,
+            body: body,
+            cancellationToken: cancellationToken);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var _ = cancellationToken.Register(() => cts.Cancel());
+
+        var queueName = instances.GetQueueName(typeof(TReply));
+        var result = await instances.ServiceBusChannel.BasicGetAsync(queueName, autoAck: true, cts.Token);
+        var reply = MessagePackSerializer.Deserialize<TReply>(result!.Body, cancellationToken: cancellationToken);
+
+        activity?.Stop();
+
+        return reply!;
     }
 
     public Guid Subscribe<TEvent>(Func<IServiceProvider, IConsumer<TEvent>> factory)

@@ -5,7 +5,7 @@ using System.Diagnostics;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddSingleton<SagaService>();
+builder.Services.AddSingleton<SagaStateMachineService>();
 
 builder.Services
     .AddAspireSagaMessaging()
@@ -23,15 +23,23 @@ app.MapDefaultEndpoints();
 
 app.MapGet("/", () => "Saga Runner is running");
 
-app.MapGet("/jobs", (SagaService sagaService) =>
+app.MapGet("/jobs", (SagaStateMachineService sagas) =>
 {
-    var sagas = sagaService.GetSagas();
-    return Results.Ok(sagas);
+    var data = sagas.All()
+        .Where(x => !x.IsFinished())
+        .Select(x => new
+        {
+            x.CorrelationId,
+        });
+    return Results.Ok(data);
 });
 
 app.MapEvent<CheckoutStarted>((evt, sp, token) =>
 {
-    var svc = sp.GetRequiredService<SagaService>();
+    var sagas = sp.GetRequiredService<SagaStateMachineService>();
+    var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+    var sb = sp.GetRequiredService<IServiceBus>();
+
     var source = sp.GetRequiredService<ActivitySource>();
 
     using var activity = source.StartActivity("CheckoutStarted");
@@ -39,11 +47,7 @@ app.MapEvent<CheckoutStarted>((evt, sp, token) =>
     activity?.SetTag("event.correlationId", evt.CorrelationId);
     activity?.SetTag("event.products", evt.Products);
 
-    svc.Save(CheckoutSaga.State.Initial.ToString(), new CheckoutSagaInstance()
-    {
-        CorrelationId = evt.CorrelationId,
-        Products = evt.Products,
-    });
+    sagas.Save(new CheckoutSaga(evt.CorrelationId, sb, loggerFactory.CreateLogger<CheckoutSaga>()));
 
     return Task.CompletedTask;
 });

@@ -3,7 +3,7 @@ using Stateless;
 
 namespace AspireSaga.Runner;
 
-public class CheckoutSaga(Guid correlationId, SagaService service, IServiceBus sb, ILogger<CheckoutSaga> logger) : SagaStateMachine<CheckoutSagaInstance, CheckoutSaga.State, CheckoutSaga.Trigger>
+public class CheckoutSaga(Guid correlationId, IServiceBus sb, ILogger<CheckoutSaga> logger) : SagaStateMachine<CheckoutSagaInstance, CheckoutSaga.State, CheckoutSaga.Trigger>
 {
     public enum State
     {
@@ -62,7 +62,7 @@ public class CheckoutSaga(Guid correlationId, SagaService service, IServiceBus s
 
         Task PublishDeliverOrderRequest()
         {
-            return sb.PublishAsync(new DeliverOrderRequest(Saga.CorrelationId, Saga.Products, Saga.Address));
+            return sb.PublishAsync(new DeliverOrderRequest(Saga.CorrelationId, Saga.Products, Saga.Address!));
         }
         void UpdateStateOnAccepted()
         {
@@ -95,11 +95,6 @@ public class CheckoutSaga(Guid correlationId, SagaService service, IServiceBus s
     protected override State GetInitialStateValue()
     {
         return State.Initial;
-    }
-
-    protected override SagaService GetSagaService()
-    {
-        return service;
     }
 
     public override bool IsFinished()
