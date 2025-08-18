@@ -9,7 +9,10 @@ builder.Services
     .AddAspireSagaMessaging()
     .AddAllEvents();
 
-builder.AddRabbitMQClient("messaging-rabbit-mq");
+builder.AddRabbitMQClient("messaging-rabbit-mq", f =>
+{
+    f.DisableTracing = true;
+});
 
 builder.AddServiceDefaults();
 
@@ -50,6 +53,20 @@ app.MapPost("/baskets", static (UpdateBasketItemRequest[] body, BasketService se
     }
 
     return Results.NoContent();
+});
+
+app.MapEvent<CheckoutFailed>(static (evt, sp, ct) =>
+{
+    var svc = sp.GetRequiredService<BasketService>();
+    svc.HandleFailedCheckout(evt.CorrelationId);
+    return Task.CompletedTask;
+});
+
+app.MapEvent<CheckoutAccepted>(static (evt, sp, ct) =>
+{
+    var svc = sp.GetRequiredService<BasketService>();
+    svc.HandleAcceptedCheckout(evt.CorrelationId);
+    return Task.CompletedTask;
 });
 
 app.Run();

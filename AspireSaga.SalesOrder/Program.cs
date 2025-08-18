@@ -7,7 +7,10 @@ builder.Services
     .AddAspireSagaMessaging()
     .AddAllEvents();
 
-builder.AddRabbitMQClient("messaging-rabbit-mq");
+builder.AddRabbitMQClient("messaging-rabbit-mq", f =>
+{
+    f.DisableTracing = true;
+});
 
 builder.AddServiceDefaults();
 
@@ -28,7 +31,7 @@ app.MapEvent<PlaceOrderRequest>(static (evt, sp, token) =>
     var lines = evt.Products
         .Select(p => new OrderLine(p.ProductId, p.Quantity))
         .ToArray();
-    return svc.PlaceOrderAsync(time.GetLocalNow(), 100, lines, evt.CorrelationId);
+    return svc.PlaceOrderAsync(time.GetLocalNow(), lines.Length * 100, lines, evt.CorrelationId);
 });
 
 app.Run();

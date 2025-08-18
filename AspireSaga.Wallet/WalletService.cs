@@ -1,6 +1,8 @@
+using AspireSaga.Messages;
+
 namespace AspireSaga.Wallet;
 
-public class WalletService
+public class WalletService(IServiceBus sb)
 {
     private readonly List<Transaction> _transactions = [];
 
@@ -14,9 +16,9 @@ public class WalletService
         const int LIMIT = 50;
         if (_transactions.Count > LIMIT)
         {
-            return [];
+            return _transactions[^LIMIT..];
         }
-        return _transactions[^LIMIT..];
+        return _transactions.AsReadOnly();
     }
 
     public void Deposit(decimal value, Guid correlationId)
@@ -25,14 +27,18 @@ public class WalletService
         _transactions.Add(tx);
     }
 
-    public void Withdraw(decimal value, Guid correlationId)
+    public async Task Withdraw(decimal value, Guid correlationId)
     {
         if (GetBalance() < value)
         {
-            throw new Exception("Insufficient Balance");
+            await sb.PublishAsync(new WithdrawRejected(correlationId, "Insufficient Balance"));
+            throw new Exception("Insufficient balance for withdrawal.");
         }
 
         var tx = new Transaction(Guid.NewGuid(), -value, "Withdraw", correlationId, TimeProvider.System.GetTimestamp());
+
         _transactions.Add(tx);
+
+        await sb.PublishAsync(new WithdrawCompleted(correlationId, value));
     }
 }

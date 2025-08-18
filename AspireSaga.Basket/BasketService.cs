@@ -74,4 +74,49 @@ public class BasketService(IServiceBus bus)
 
         await bus.PublishAsync(@event, cancellationToken);
     }
+
+    public void HandleFailedCheckout(Guid correlationId)
+    {
+        var checkout = _checkouts.FirstOrDefault(x => x.CorrelationId == correlationId);
+
+        if (checkout is null)
+        {
+            throw new InvalidOperationException($"Checkout with CorrelationId {correlationId} does not exist.");
+        }
+
+        foreach (var item in checkout.Items)
+        {
+            if (_baskets.ContainsKey(item.ProductId))
+            {
+                _baskets[item.ProductId] = _baskets[item.ProductId] with
+                {
+                    Quantity = _baskets[item.ProductId].Quantity + item.Quantity
+                };
+            }
+            else
+            {
+                _baskets.Add(item.ProductId, new BasketItem(item.ProductId, item.Quantity));
+            }
+        }
+
+        _checkouts.Remove(checkout);
+        _checkouts.Add(checkout with
+        {
+            Status = CheckoutStatus.Failed,
+        });
+    }
+
+    public void HandleAcceptedCheckout(Guid correlationId)
+    {
+        var checkout = _checkouts.FirstOrDefault(x => x.CorrelationId == correlationId);
+        if (checkout is null)
+        {
+            throw new InvalidOperationException($"Checkout with CorrelationId {correlationId} does not exist.");
+        }
+        _checkouts.Remove(checkout);
+        _checkouts.Add(checkout with
+        {
+            Status = CheckoutStatus.Completed,
+        });
+    }
 }

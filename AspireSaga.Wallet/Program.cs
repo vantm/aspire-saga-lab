@@ -9,7 +9,10 @@ builder.Services
     .AddAspireSagaMessaging()
     .AddAllEvents();
 
-builder.AddRabbitMQClient("messaging-rabbit-mq");
+builder.AddRabbitMQClient("messaging-rabbit-mq", f =>
+{
+    f.DisableTracing = true;
+});
 
 builder.AddServiceDefaults();
 
@@ -23,23 +26,29 @@ app.MapGet("/balance", (WalletService service) => service.GetBalance());
 
 app.MapGet("/transactions", (WalletService service) => service.GetTransactions());
 
-app.MapPost("/deposit", (DepositHttpRequest request , WalletService service) =>
+app.MapPost("/deposit", (DepositHttpRequest request, WalletService service) =>
 {
     service.Deposit(request.Value, request.CorrelationId);
     return Results.Ok();
 });
 
-app.MapPost("/withdraw", (WithdrawHttpRequest request, WalletService service) =>
+app.MapPost("/withdraw", async (WithdrawHttpRequest request, WalletService service) =>
 {
     try
     {
-        service.Withdraw(request.Value, request.CorrelationId);
+        await service.Withdraw(request.Value, request.CorrelationId);
         return Results.Ok();
     }
     catch (Exception ex)
     {
         return Results.BadRequest(ex.Message);
     }
+});
+
+app.MapEvent<WithdrawRequest>(static (evt, sp, ct) =>
+{
+    var svc = sp.GetRequiredService<WalletService>();
+    return svc.Withdraw(evt.Price, evt.CorrelationId);
 });
 
 app.Run();

@@ -7,6 +7,7 @@ using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using System.Diagnostics;
 using System.Text;
+using System.Text.Json;
 
 namespace AspireSaga.Messages.RabbitMQ;
 
@@ -37,18 +38,8 @@ class RabbitMqWorker<T>(RabbitMqInstances instances, IServiceProvider services, 
 
     private async Task ReceivedAsync(object sender, BasicDeliverEventArgs @event)
     {
-        var parentContext = Propagators.DefaultTextMapPropagator.Extract(default, @event.BasicProperties.Headers, (carrier, key) =>
-        {
-            if (carrier is { } && carrier.TryGetValue(key, out var value) && value is byte[] bytes)
-            {
-                return [Encoding.UTF8.GetString(bytes)];
-            }
-            return [];
-        });
-
-        var activity = source.StartActivity("RabbitMqWorker", ActivityKind.Consumer, parentContext.ActivityContext);
-
         var senderChannel = ((AsyncEventingBasicConsumer)sender).Channel;
+        Activity? activity = null;
 
         try
         {
@@ -62,13 +53,17 @@ class RabbitMqWorker<T>(RabbitMqInstances instances, IServiceProvider services, 
                 logger.LogDebug("Received message of type {MessageType} with delivery tag {DeliveryTag}.", messageTypeInString, @event.DeliveryTag);
             }
 
-            activity?.SetTag("event-type", messageTypeInString);
-
             Type messageType = Type.GetType(messageTypeInString)!;
             Debug.Assert(messageType is not null, $"The message type {messageTypeInString} could not be resolved.");
 
             var message = MessagePackSerializer.Deserialize(messageType, body, cancellationToken: @event.CancellationToken);
             Debug.Assert(message is not null, "The deserialized message cannot be null.");
+
+            if (logger.IsEnabled(LogLevel.Debug))
+            {
+                var json = JsonSerializer.Serialize(message);
+                logger.LogDebug("Deserialized message: {Message}", json);
+            }
 
             var consumerType = typeof(IConsumer<>).MakeGenericType(messageType);
             var consumeMethod = consumerType.GetMethod(nameof(IConsumer<object>.ConsumeAsync));
@@ -83,6 +78,22 @@ class RabbitMqWorker<T>(RabbitMqInstances instances, IServiceProvider services, 
             await using var scope = services.CreateAsyncScope();
 
             var subscriptions = sb.GetSubscriptions(messageType);
+
+            var parentContext = Propagators.DefaultTextMapPropagator.Extract(default, @event.BasicProperties.Headers, (carrier, key) =>
+            {
+                if (carrier is { } && carrier.TryGetValue(key, out var value) && value is byte[] bytes)
+                {
+                    return [Encoding.UTF8.GetString(bytes)];
+                }
+                return [];
+            });
+
+            if (subscriptions.Any())
+            {
+                activity = source.StartActivity("RabbitMqWorker", ActivityKind.Consumer, parentContext.ActivityContext);
+            }
+
+            activity?.SetTag("event-type", messageTypeInString);
 
             foreach (var subscription in subscriptions)
             {

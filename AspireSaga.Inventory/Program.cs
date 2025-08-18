@@ -14,7 +14,10 @@ builder.Services
     .AddAspireSagaMessaging()
     .AddAllEvents();
 
-builder.AddRabbitMQClient("messaging-rabbit-mq");
+builder.AddRabbitMQClient("messaging-rabbit-mq", f =>
+{
+    f.DisableTracing = true;
+});
 
 builder.AddServiceDefaults();
 

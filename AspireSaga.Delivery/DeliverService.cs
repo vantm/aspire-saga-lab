@@ -13,34 +13,18 @@ public class DeliverService(TimeProvider time, IServiceBus bus)
         Debug.Assert(items is { Length: > 0 }, "Delivery has no item");
         Debug.Assert(!_items.ContainsKey(correlationId), $"Delivery with CorrelationId {correlationId} already exists.");
 
-        var item = new Delivery(Guid.NewGuid(), correlationId, items, address, null, null);
+        var item = new Delivery(Guid.NewGuid(), correlationId, items, address, null);
 
         _items.Add(item.CorrelationId, item);
     }
 
-    public void SetPackaged(Guid correlationId)
-    {
-        Debug.Assert(correlationId != Guid.Empty, "CorrelationId cannot be empty.");
-        Debug.Assert(_items.ContainsKey(correlationId), $"Delivery with CorrelationId {correlationId} does not exist.");
-        var item = _items[correlationId];
-
-        Debug.Assert(item.DeliveredAt is null, $"Delivery with CorrelationId {correlationId} is already delivered.");
-        Debug.Assert(item.PackagedAt is null, $"Delivery with CorrelationId {correlationId} is already packaged.");
-
-        _items[correlationId] = item with
-        {
-            PackagedAt = time.GetUtcNow(),
-        };
-    }
-
-    public Task SetDelivered(Guid correlationId)
+    public Task Complete(Guid correlationId)
     {
         Debug.Assert(correlationId != Guid.Empty, "CorrelationId cannot be empty.");
         Debug.Assert(_items.ContainsKey(correlationId), $"Delivery with CorrelationId {correlationId} does not exist.");
 
         var item = _items[correlationId];
 
-        Debug.Assert(item.PackagedAt is not null, $"Delivery with CorrelationId {correlationId} is not packaged yet.");
         Debug.Assert(item.DeliveredAt is null, $"Delivery with CorrelationId {correlationId} is already delivered.");
 
         _items[correlationId] = item with

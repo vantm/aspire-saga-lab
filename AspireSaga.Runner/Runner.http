@@ -1,0 +1,4 @@
+@baseUrl = https://localhost:7297
+
+###
+GET {{baseUrl}}/jobs

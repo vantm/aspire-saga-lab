@@ -1,5 +1,4 @@
 using AspireSaga.Messages;
-using AspireSaga.Messages.RabbitMQ;
 using AspireSaga.Runner;
 using System.Diagnostics;
 
@@ -11,7 +10,10 @@ builder.Services
     .AddAspireSagaMessaging()
     .AddAllEvents();
 
-builder.AddRabbitMQClient("messaging-rabbit-mq");
+builder.AddRabbitMQClient("messaging-rabbit-mq", f =>
+{
+    f.DisableTracing = true;
+});
 
 builder.Services.AddHostedService<SagaRunner>();
 
@@ -47,7 +49,7 @@ app.MapEvent<CheckoutStarted>((evt, sp, token) =>
     activity?.SetTag("event.correlationId", evt.CorrelationId);
     activity?.SetTag("event.products", evt.Products);
 
-    sagas.Save(new CheckoutSaga(evt.CorrelationId, sb, loggerFactory.CreateLogger<CheckoutSaga>()));
+    sagas.Save(new CheckoutSaga(evt.CorrelationId, evt.Products, sb, loggerFactory.CreateLogger<CheckoutSaga>()));
 
     return Task.CompletedTask;
 });

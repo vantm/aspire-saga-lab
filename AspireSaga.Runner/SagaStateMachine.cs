@@ -7,8 +7,8 @@ namespace AspireSaga.Runner;
 public abstract class SagaStateMachine<TSagaInstance, TState, TTrigger> : ISagaStateMachine
     where TSagaInstance : ISagaInstance
 {
-    protected StateMachine<TState, TTrigger> _stateMachine;
-    protected TSagaInstance _saga;
+    protected readonly StateMachine<TState, TTrigger> _stateMachine;
+    protected readonly TSagaInstance _saga;
 
     protected SagaStateMachine()
     {
@@ -26,11 +26,11 @@ public abstract class SagaStateMachine<TSagaInstance, TState, TTrigger> : ISagaS
 
     protected ActivitySource? ActivitySource { get; private set; }
 
-    private readonly List<Guid> subscription = [];
+    private readonly List<Guid> _subscriptions = [];
 
     public Guid CorrelationId => _saga.CorrelationId;
 
-    protected void When<TEvt>(TTrigger trigger, Action<InvalidOperationException>? onFailed = null)
+    protected void When<TEvt>(TTrigger trigger, Action<TEvt>? beforeFiring = null, Action<InvalidOperationException>? onFailed = null)
     {
         var subId = GetServiceBus().SubscribeDelegate<TEvt>(async (evt, token) =>
         {
@@ -42,6 +42,11 @@ public abstract class SagaStateMachine<TSagaInstance, TState, TTrigger> : ISagaS
             {
                 activity?.SetTag("saga.type", GetType().FullName);
                 activity?.SetTag("saga.trigger", trigger);
+
+                if (_stateMachine.CanFire(trigger))
+                {
+                    beforeFiring?.Invoke(evt);
+                }
 
                 await _stateMachine.FireAsync(trigger);
 
@@ -59,7 +64,7 @@ public abstract class SagaStateMachine<TSagaInstance, TState, TTrigger> : ISagaS
             }
         });
 
-        subscription.Add(subId);
+        _subscriptions.Add(subId);
     }
 
     protected virtual void BeforeActivate()
@@ -101,7 +106,7 @@ public abstract class SagaStateMachine<TSagaInstance, TState, TTrigger> : ISagaS
     public virtual Task StopAsync()
     {
         var sb = GetServiceBus();
-        foreach (var subId in subscription)
+        foreach (var subId in _subscriptions)
         {
             sb.Unsubscribe(subId);
         }

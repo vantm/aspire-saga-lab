@@ -1,21 +1,21 @@
 @baseUrl = https://localhost:7178
 
 ###
-GET /balance
+GET {{baseUrl}}/balance
 
 ###
-GET /transactions
+GET {{baseUrl}}/transactions
 
 ###
-POST /deposit
+POST {{baseUrl}}/deposit
 Content-Type: application/json
 
 {
-  "value": 100.0
+  "value": 800.0
 }
 
 ###
-POST /deposit
+POST {{baseUrl}}/withdraw
 Content-Type: application/json
 
 {

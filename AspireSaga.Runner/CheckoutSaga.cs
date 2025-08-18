@@ -3,7 +3,7 @@ using Stateless;
 
 namespace AspireSaga.Runner;
 
-public class CheckoutSaga(Guid correlationId, IServiceBus sb, ILogger<CheckoutSaga> logger) : SagaStateMachine<CheckoutSagaInstance, CheckoutSaga.State, CheckoutSaga.Trigger>
+public class CheckoutSaga(Guid correlationId, PlacedProduct[] products, IServiceBus sb, ILogger<CheckoutSaga> logger) : SagaStateMachine<CheckoutSagaInstance, CheckoutSaga.State, CheckoutSaga.Trigger>
 {
     public enum State
     {
@@ -57,12 +57,22 @@ public class CheckoutSaga(Guid correlationId, IServiceBus sb, ILogger<CheckoutSa
             _saga.FailedAt = DateTimeOffset.Now; // TODO: from event
             _saga.FailedReason = nameof(State.PaymentFailed);
         }
+        Task PublishCheckoutFailedAsync()
+        {
+            return sb.PublishAsync(new CheckoutFailed(Saga.CorrelationId));
+        }
         stateMachine.Configure(State.PaymentFailed)
-            .OnEntry(UpdateStateOnPaymentFailed, nameof(UpdateStateOnPaymentFailed));
+            .OnEntry(UpdateStateOnPaymentFailed, nameof(UpdateStateOnPaymentFailed))
+            .OnEntryAsync(PublishCheckoutFailedAsync, nameof(PublishCheckoutFailedAsync))
+            .OnActivateAsync(PublishCheckoutFailedAsync, nameof(PublishCheckoutFailedAsync));
 
         Task PublishDeliverOrderRequest()
         {
             return sb.PublishAsync(new DeliverOrderRequest(Saga.CorrelationId, Saga.Products, Saga.Address!));
+        }
+        Task PublishCheckoutAcceptedAsync()
+        {
+            return sb.PublishAsync(new CheckoutAccepted(Saga.CorrelationId));
         }
         void UpdateStateOnAccepted()
         {
@@ -72,6 +82,8 @@ public class CheckoutSaga(Guid correlationId, IServiceBus sb, ILogger<CheckoutSa
             .Permit(Trigger.DeliverOrder, State.Completed)
             .OnActivateAsync(PublishDeliverOrderRequest, nameof(PublishDeliverOrderRequest))
             .OnEntryAsync(PublishDeliverOrderRequest, nameof(PublishDeliverOrderRequest))
+            .OnActivateAsync(PublishCheckoutAcceptedAsync, nameof(PublishCheckoutAcceptedAsync))
+            .OnEntryAsync(PublishCheckoutAcceptedAsync, nameof(PublishCheckoutAcceptedAsync))
             .OnEntry(UpdateStateOnAccepted, nameof(UpdateStateOnAccepted));
 
         void UpdateStateOnCompleted()
@@ -89,7 +101,7 @@ public class CheckoutSaga(Guid correlationId, IServiceBus sb, ILogger<CheckoutSa
 
     protected override CheckoutSagaInstance GetInitialSagaState()
     {
-        return new() { CorrelationId = correlationId, Products = [] };
+        return new() { CorrelationId = correlationId, Products = [.. products] };
     }
 
     protected override State GetInitialStateValue()
@@ -105,7 +117,11 @@ public class CheckoutSaga(Guid correlationId, IServiceBus sb, ILogger<CheckoutSa
 
     protected override void BeforeActivate()
     {
-        When<OrderPlaced>(Trigger.PlaceOrder);
+        When<OrderPlaced>(Trigger.PlaceOrder, beforeFiring: evt =>
+        {
+            logger.LogInformation("Order placed w/ price {Price}", evt.Price);
+            Saga.Price = evt.Price;
+        });
         When<PaymentCreated>(Trigger.CreatePayment);
         When<PaymentRejected>(Trigger.RejectPayment);
         When<PaymentCompleted>(Trigger.CompletePayment);

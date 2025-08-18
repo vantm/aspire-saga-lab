@@ -1,0 +1,8 @@
+@baseUrl = https://localhost:7218
+@id = 25f3edc4-5c4e-4333-83f9-9fe91a5fdbe6
+
+###
+GET {{baseUrl}}/deliveries
+
+###
+POST {{baseUrl}}/deliveries/{{id}}/complete

@@ -7,7 +7,7 @@ public class CheckoutSagaInstance : ISagaInstance
     public required Guid CorrelationId { get; init; }
     public required PlacedProduct[] Products { get; init; }
 
-    public decimal Price { get; set; } = 777;
+    public decimal Price { get; set; }
     public DateTimeOffset? CreatedAt { get; set; }
     public DateTimeOffset? PaidAt { get; set; }
     public DateTimeOffset? FailedAt { get; set; }

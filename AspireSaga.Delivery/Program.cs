@@ -10,21 +10,18 @@ builder.Services
     .AddAspireSagaMessaging()
     .AddAllEvents();
 
-builder.AddRabbitMQClient("messaging-rabbit-mq");
+builder.AddRabbitMQClient("messaging-rabbit-mq", f =>
+{
+    f.DisableTracing = true;
+});
 
 var app = builder.Build();
 
 app.MapGet("/", () => "Delivery Service is running");
 
-app.MapPost("/deliveries/{id:guid}/packaged", static (Guid id, DeliverService service) =>
+app.MapPost("/deliveries/{id:guid}/complete", static async (Guid id, DeliverService service) =>
 {
-    service.SetPackaged(id);
-    return Results.NoContent();
-});
-
-app.MapPost("/deliveries/{id:guid}/delivered", static async (Guid id, DeliverService service) =>
-{
-    await service.SetDelivered(id);
+    await service.Complete(id);
     return Results.NoContent();
 });
 

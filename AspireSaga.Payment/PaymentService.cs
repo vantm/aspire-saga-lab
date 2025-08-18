@@ -23,7 +23,7 @@ public class PaymentService(IServiceBus sb, ActivitySource source)
             throw new Exception("The payment has been completed.");
         }
 
-        var payment = new Payment(Guid.NewGuid(), value, PaymentStatus.Pending, correlationId, TimeProvider.System.GetTimestamp(), null);
+        var payment = new Payment(Guid.NewGuid(), value, PaymentStatus.Pending, correlationId, TimeProvider.System.GetTimestamp(), null, null);
 
         _payments.Add(payment);
 
@@ -70,6 +70,40 @@ public class PaymentService(IServiceBus sb, ActivitySource source)
         });
 
         await sb.PublishAsync(new PaymentCompleted(correlationId, completedAt));
+
+        activity?.SetStatus(ActivityStatusCode.Ok);
+
+        activity?.Stop();
+    }
+
+    public async Task Reject(Guid correlationId, string reason)
+    {
+        var activity = source.StartActivity("PaymentService.Reject", ActivityKind.Internal, correlationId.ToString());
+
+        Debug.Assert(correlationId != Guid.Empty, "The correlation ID must be provided.");
+
+        var payment = Get(correlationId);
+
+        if (payment is null)
+        {
+            throw new Exception("The payment doesn't exist.");
+        }
+
+        Debug.Assert(payment.Status == PaymentStatus.Pending, "The payment must be in pending status to complete it.");
+
+        _payments.Remove(payment);
+
+        var rejectedAt = TimeProvider.System.GetLocalNow();
+
+        activity?.SetTag("rejected-at", rejectedAt.ToString("o"));
+
+        _payments.Add(payment with
+        {
+            Status = PaymentStatus.Failed,
+            ErrorMessage = reason
+        });
+
+        await sb.PublishAsync(new PaymentRejected(correlationId, reason));
 
         activity?.SetStatus(ActivityStatusCode.Ok);
 
