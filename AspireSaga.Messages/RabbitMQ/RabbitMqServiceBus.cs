@@ -3,9 +3,7 @@ using Microsoft.Extensions.Logging;
 using OpenTelemetry;
 using OpenTelemetry.Context.Propagation;
 using RabbitMQ.Client;
-using RabbitMQ.Client.Events;
 using System.Diagnostics;
-using System.Runtime.Versioning;
 using System.Text.Json;
 
 namespace AspireSaga.Messages.RabbitMQ;
@@ -27,7 +25,7 @@ class RabbitMqServiceBus(RabbitMqInstances instances, ILogger<RabbitMqServiceBus
 
     public async Task PublishAsync(object message, CancellationToken cancellationToken = default)
     {
-        var activity = source.StartActivity("RabbitMqServiceBus.PublishAsync", ActivityKind.Producer);
+        var activity = source.StartActivity("RabbitMqServiceBus", ActivityKind.Producer);
 
         Debug.Assert(message is not null, "The message cannot be null.");
 
@@ -82,7 +80,7 @@ class RabbitMqServiceBus(RabbitMqInstances instances, ILogger<RabbitMqServiceBus
     public async Task<TReply> GetReplyAsync<TReply>(object message, CancellationToken cancellationToken = default)
         where TReply : IReply
     {
-        var activity = source.StartActivity("RabbitMqServiceBus.GetReplyAsync", ActivityKind.Producer);
+        var activity = source.StartActivity("RabbitMqServiceBus", ActivityKind.Producer);
 
         Debug.Assert(message is not null, "The message cannot be null.");
 

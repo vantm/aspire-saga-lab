@@ -34,7 +34,7 @@ app.MapPost("/payments/{id:guid}/complete", static (Guid id, PaymentService serv
     return Results.NoContent();
 });
 
-app.MapEvent<PurchaseRequest>(static (evt, sp, ct) =>
+app.MapEvent<PaymentRequest>(static (evt, sp, ct) =>
 {
     var svc = sp.GetRequiredService<PaymentService>();
     return svc.PayAsync(evt.Price, evt.CorrelationId);

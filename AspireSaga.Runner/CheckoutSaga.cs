@@ -41,7 +41,7 @@ public class CheckoutSaga(Guid correlationId, IServiceBus sb, ILogger<CheckoutSa
 
         Task PublishCreatePaymentRequest()
         {
-            return sb.PublishAsync(new PurchaseRequest(Saga.CorrelationId, Saga.Price));
+            return sb.PublishAsync(new PaymentRequest(Saga.CorrelationId, Saga.Price));
         }
         stateMachine.Configure(State.Pending)
             .Permit(Trigger.CreatePayment, State.PaymentProcessing)
@@ -106,7 +106,7 @@ public class CheckoutSaga(Guid correlationId, IServiceBus sb, ILogger<CheckoutSa
     protected override void BeforeActivate()
     {
         When<OrderPlaced>(Trigger.PlaceOrder);
-        When<PurchaseCreated>(Trigger.CreatePayment);
+        When<PaymentCreated>(Trigger.CreatePayment);
         When<PaymentRejected>(Trigger.RejectPayment);
         When<PaymentCompleted>(Trigger.CompletePayment);
         When<OrderDelivered>(Trigger.DeliverOrder);

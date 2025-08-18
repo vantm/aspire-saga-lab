@@ -1,0 +1,23 @@
+@baseUrl = https://localhost:7178
+
+###
+GET /balance
+
+###
+GET /transactions
+
+###
+POST /deposit
+Content-Type: application/json
+
+{
+  "value": 100.0
+}
+
+###
+POST /deposit
+Content-Type: application/json
+
+{
+  "value": 20
+}

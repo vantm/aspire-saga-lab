@@ -27,7 +27,7 @@ public class PaymentService(IServiceBus sb, ActivitySource source)
 
         _payments.Add(payment);
 
-        return sb.PublishAsync(new PurchaseCreated(correlationId));
+        return sb.PublishAsync(new PaymentCreated(correlationId));
     }
 
     public void Refund(decimal value, Guid correlationId)

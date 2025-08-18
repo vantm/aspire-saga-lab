@@ -46,7 +46,7 @@ class RabbitMqWorker<T>(RabbitMqInstances instances, IServiceProvider services, 
             return [];
         });
 
-        var activity = source.StartActivity("RabbitMqWorker.ReceivedAsync", ActivityKind.Consumer, parentContext.ActivityContext);
+        var activity = source.StartActivity("RabbitMqWorker", ActivityKind.Consumer, parentContext.ActivityContext);
 
         var senderChannel = ((AsyncEventingBasicConsumer)sender).Channel;
 

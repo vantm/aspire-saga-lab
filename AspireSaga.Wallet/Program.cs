@@ -1,3 +1,4 @@
+using AspireSaga.Messages;
 using AspireSaga.Wallet;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -22,17 +23,17 @@ app.MapGet("/balance", (WalletService service) => service.GetBalance());
 
 app.MapGet("/transactions", (WalletService service) => service.GetTransactions());
 
-app.MapPost("/deposit", (decimal value, Guid correlationId, WalletService service) =>
+app.MapPost("/deposit", (DepositHttpRequest request , WalletService service) =>
 {
-    service.Deposit(value, correlationId);
+    service.Deposit(request.Value, request.CorrelationId);
     return Results.Ok();
 });
 
-app.MapPost("/withdraw", (decimal value, Guid correlationId, WalletService service) =>
+app.MapPost("/withdraw", (WithdrawHttpRequest request, WalletService service) =>
 {
     try
     {
-        service.Withdraw(value, correlationId);
+        service.Withdraw(request.Value, request.CorrelationId);
         return Results.Ok();
     }
     catch (Exception ex)
